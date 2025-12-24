@@ -33,9 +33,18 @@ jobs:
       # 等待SQL Server就绪（关键：避免服务未启动就连接）
       - name: 等待SQL Server启动完成
         run: |
+          # 先等待容器启动，再循环检测SQL Server服务
+          sleep 10
+          MAX_ATTEMPTS=20
+          ATTEMPT=1
           until docker exec test-sqlserver /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P StrongPass@123456 -Q "SELECT 1" > /dev/null 2>&1; do
-            echo "等待SQL Server启动..."
+            if [ $ATTEMPT -ge $MAX_ATTEMPTS ]; then
+              echo "SQL Server启动超时"
+              exit 1
+            fi
+            echo "等待SQL Server启动...（第$ATTEMPT次尝试）"
             sleep 5
+            ATTEMPT=$((ATTEMPT+1))
           done
           # 创建测试数据库（bill_test_db）
           docker exec test-sqlserver /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P StrongPass@123456 -Q "CREATE DATABASE bill_test_db;"
