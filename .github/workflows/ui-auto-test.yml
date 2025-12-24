@@ -53,9 +53,9 @@ jobs:
         run: |
           npm install  # 安装前端依赖
           # 启动Vue服务（后台运行，绑定0.0.0.0）
-          nohup npm run serve -- --host 0.0.0.0 --port 8080 &> frontend.log &
-          # 等待前端服务启动（休眠10秒，Vue启动较慢）
-          sleep 10
+          nohup npm run serve -- --host 0.0.0.0 --port 8080 &
+          # 等待前端服务启动（休眠15秒，Vue启动较慢）
+          sleep 15
           echo "前端服务已启动"
 
       # 步骤6：安装Chrome浏览器（适配UI自动化）
@@ -106,18 +106,11 @@ jobs:
           retention-days: 7  # 报告保留7天
 
       # 步骤12：上传日志文件（用于调试）
-      - name: 上传后端日志
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: backend-logs
-          path: ./vue-csharp-ui-auto/Backend/backend.log
-          retention-days: 7
-
-      - name: 上传前端日志
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: frontend-logs
-          path: ./vue-csharp-ui-auto/Frontend/frontend.log
-          retention-days: 7
+      # 暂时注释前端日志上传，避免路径错误
+      # - name: 上传前端日志
+      #   uses: actions/upload-artifact@v4
+      #   if: always()
+      #   with:
+      #     name: frontend-logs
+      #     path: ./vue-csharp-ui-auto/Frontend/frontend.log
+      #     retention-days: 7
