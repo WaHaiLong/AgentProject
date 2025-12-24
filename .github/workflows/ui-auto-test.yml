@@ -19,6 +19,32 @@ jobs:
       - name: 拉取代码
         uses: actions/checkout@v4
 
+      # 新增：启动SQL Server测试容器（跑完自动销毁）
+      - name: 启动SQL Server测试容器
+        uses: docker://mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y                    # 必须同意许可
+          SA_PASSWORD: Test@123456          # 强密码（符合SQL Server要求）
+          MSSQL_PID: Express                # 免费版，适合测试
+          MSSQL_TCP_PORT: 1433              # 默认端口
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P Test@123456 -Q 'SELECT 1'"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      # 等待SQL Server就绪（关键：避免服务未启动就连接）
+      - name: 等待SQL Server启动完成
+        run: |
+          until /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P Test@123456 -Q 'SELECT 1' > /dev/null 2>&1; do
+            echo "等待SQL Server启动..."
+            sleep 3
+          done
+          # 创建测试数据库（bill_test_db）
+          /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P Test@123456 -Q 'CREATE DATABASE bill_test_db;'
+
       # 步骤2：配置C#运行环境（.NET SDK）
       - name: 安装.NET SDK
         uses: actions/setup-dotnet@v4
@@ -28,16 +54,17 @@ jobs:
       # 步骤3：启动C#后端服务（后台运行）
       - name: 启动C#后端服务
         working-directory: ./vue-csharp-ui-auto/Backend  # 后端项目目录
+        env:
+          ASPNETCORE_ENVIRONMENT: Test  # 关键：切换到测试配置
         run: |
           dotnet restore  # 还原依赖
           dotnet build    # 编译项目
           # 启动后端服务（后台运行，绑定0.0.0.0允许外部访问）
-          nohup dotnet run --urls=http://0.0.0.0:5000 &> backend.log &
-          # 等待后端服务启动（休眠5秒）
-          sleep 5
+          nohup dotnet run --urls=http://0.0.0.0:5000 &
+          sleep 10  # 延长等待，确保数据库迁移完成
           # 检查后端服务是否启动成功
           echo "检查后端服务状态..."
-          timeout 30 bash -c 'until curl -f http://localhost:5000/api/health; do sleep 2; done' || (cat backend.log && exit 1)
+          timeout 30 bash -c 'until curl -f http://localhost:5000/api/health; do sleep 2; done'
 
       # 步骤4：配置Node.js环境（运行Vue前端）
       - name: 安装Node.js
@@ -83,6 +110,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+
+      # 步骤8.1：安装SQL Server ODBC驱动
+      - name: 安装SQL Server ODBC驱动
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unixodbc unixodbc-dev
+          sudo apt-get install -y msodbcsql17  # SQL Server ODBC驱动
 
       # 步骤9：安装Python测试依赖
       - name: 安装测试依赖

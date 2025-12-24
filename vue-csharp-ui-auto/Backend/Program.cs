@@ -21,9 +21,20 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Add Entity Framework In-Memory Database for testing
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseInMemoryDatabase("TestDb"));
+// Add Entity Framework - choose database based on environment
+var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+if (env == "Test")
+{
+    // Use SQL Server for testing in GitHub Actions
+    builder.Services.AddDbContext<AppDbContext>(options =>
+        options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+}
+else
+{
+    // Use in-memory database for local development
+    builder.Services.AddDbContext<AppDbContext>(options =>
+        options.UseInMemoryDatabase("TestDb"));
+}
 
 // Add custom services
 builder.Services.AddScoped<IAuthService, AuthService>();
