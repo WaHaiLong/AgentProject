@@ -19,21 +19,27 @@ jobs:
       - name: 拉取代码
         uses: actions/checkout@v4
 
+      # 设置Docker Buildx
+      - name: 设置Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       # 新增：启动SQL Server测试容器（跑完自动销毁）
       - name: 启动SQL Server测试容器
-        uses: docker://mcr.microsoft.com/mssql/server:2022-latest
-        env:
-          ACCEPT_EULA: Y                    # 必须同意许可
-          SA_PASSWORD: Test@123456          # 强密码（符合SQL Server要求）
-          MSSQL_PID: Express                # 免费版，适合测试
-          MSSQL_TCP_PORT: 1433              # 默认端口
-        ports:
-          - 1433:1433
-        options: >-
-          --health-cmd "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P Test@123456 -Q 'SELECT 1'"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
+        uses: docker/run-action@v3
+        with:
+          image: mcr.microsoft.com/mssql/server:2022-latest
+          env:
+            ACCEPT_EULA: Y
+            SA_PASSWORD: Test@123456
+            MSSQL_PID: Express
+            MSSQL_TCP_PORT: 1433
+          ports:
+            - 1433:1433
+          options: >-
+            --health-cmd "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P Test@123456 -Q 'SELECT 1'"
+            --health-interval=10s
+            --health-timeout=5s
+            --health-retries=5
 
       # 等待SQL Server就绪（关键：避免服务未启动就连接）
       - name: 等待SQL Server启动完成
