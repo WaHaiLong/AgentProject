@@ -28,7 +28,19 @@ jobs:
             -e SA_PASSWORD=StrongPass@123456 \
             -e MSSQL_PID=Express \
             -p 1433:1433 \
-            mcr.microsoft.com/mssql/server:2022-latest
+            mcr.microsoft.com/mssql/server:2022-latest-ubuntu-22.04  # 使用包含工具的镜像
+
+      # 排查SQL Server容器状态
+      - name: 全量排查SQL Server问题
+        run: |
+          echo "===== 容器状态 ====="
+          docker ps -a
+          echo "===== 容器日志 ====="
+          docker logs test-sqlserver | head -100
+          echo "===== 测试sqlcmd连接 ====="
+          docker exec test-sqlserver /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P StrongPass@123456 -Q "SELECT @@VERSION;" 2>&1
+          echo "===== 检查端口 ====="
+          docker exec test-sqlserver netstat -tulpn | grep 1433 || echo "1433端口未监听"
 
       # 等待SQL Server就绪（关键：避免服务未启动就连接）
       - name: 等待SQL Server启动完成
