@@ -129,14 +129,23 @@ jobs:
       - name: 执行UI自动化测试
         working-directory: ./vue-csharp-ui-auto/UiAutoTest
         run: |
-          pytest test_vue_page.py --html=ui-test-report.html --self-contained-html || echo "测试完成，可能有失败项"
+          pytest test_vue_page.py --html=ui-test-report.html --self-contained-html || echo "UI测试完成，可能有失败项"
+          pytest test_bill_api.py --html=sql-test-report.html --self-contained-html || echo "SQL Server接口测试完成，可能有失败项"
 
-      # 步骤11：上传测试报告（方便查看）
-      - name: 上传测试报告
+      # 步骤11：上传UI测试报告（方便查看）
+      - name: 上传UI测试报告
         uses: actions/upload-artifact@v4
         with:
           name: vue-csharp-ui-test-report
           path: ./vue-csharp-ui-auto/UiAutoTest/ui-test-report.html
+          retention-days: 7  # 报告保留7天
+
+      # 步骤11.1：上传SQL Server接口测试报告
+      - name: 上传SQL Server接口测试报告
+        uses: actions/upload-artifact@v4
+        with:
+          name: sql-server-api-test-report
+          path: ./vue-csharp-ui-auto/UiAutoTest/sql-test-report.html
           retention-days: 7  # 报告保留7天
 
       # 步骤12：上传日志文件（用于调试）
