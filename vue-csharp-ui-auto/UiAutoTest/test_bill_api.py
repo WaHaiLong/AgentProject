@@ -11,7 +11,7 @@ SQL_SERVER_CONFIG = {
     "SERVER": "localhost,1433",
     "DATABASE": "bill_test_db",
     "UID": "sa",
-    "PWD": "Test@123456",
+    "PWD": "StrongPass@123456",
     "TrustServerCertificate": "yes"  # 跳过证书验证（测试环境）
 }
 
