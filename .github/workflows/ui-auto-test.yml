@@ -44,8 +44,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'  # 适配你的Vue项目Node版本
-          cache: 'npm'
-          cache-dependency-path: ./vue-csharp-ui-auto/Frontend/package-lock.json
+          # cache: 'npm'
+          # cache-dependency-path: ./vue-csharp-ui-auto/Frontend/package-lock.json
 
       # 步骤5：启动Vue前端服务（后台运行）
       - name: 启动Vue前端服务
