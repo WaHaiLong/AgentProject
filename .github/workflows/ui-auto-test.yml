@@ -125,9 +125,13 @@ jobs:
       # 步骤8.1：安装SQL Server ODBC驱动
       - name: 安装SQL Server ODBC驱动
         run: |
+          # 添加Microsoft ODBC驱动软件源
+          curl https://packages.microsoft.com/keys/microsoft.asc | sudo tee /etc/apt/trusted.gpg.d/microsoft.asc
+          curl https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          # 安装ODBC驱动
           sudo apt-get update
-          sudo apt-get install -y unixodbc unixodbc-dev
-          sudo apt-get install -y msodbcsql17  # SQL Server ODBC驱动
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18
+          sudo apt-get install -y unixodbc-dev
 
       # 步骤9：安装Python测试依赖
       - name: 安装测试依赖

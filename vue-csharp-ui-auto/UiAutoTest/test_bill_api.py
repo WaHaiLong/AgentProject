@@ -7,7 +7,7 @@ BASE_URL = "http://localhost:5000"
 
 # SQL Server连接配置（和Actions中容器一致）
 SQL_SERVER_CONFIG = {
-    "DRIVER": "{ODBC Driver 17 for SQL Server}",
+    "DRIVER": "{ODBC Driver 18 for SQL Server}",
     "SERVER": "localhost,1433",
     "DATABASE": "bill_test_db",
     "UID": "sa",
