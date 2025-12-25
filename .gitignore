@@ -1,5 +1,2 @@
 # Visual Studio
 .vs/
-
-# vue-csharp-ui-auto 是独立的子仓库，不要在父仓库追踪
-vue-csharp-ui-auto/
