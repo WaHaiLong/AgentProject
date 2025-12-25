@@ -35,10 +35,11 @@ jobs:
       - name: 等待SQL Server启动完成
         run: |
           # 先等待容器启动，再循环检测SQL Server服务
-          sleep 20  # SQL Server需要更多时间启动
+          sleep 30  # SQL Server 2022需要更多时间启动
           MAX_ATTEMPTS=30
           ATTEMPT=1
-          until docker exec test-sqlserver /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P StrongPass@123456 -Q "SELECT 1" > /dev/null 2>&1; do
+          # 注意：SQL Server 2022使用mssql-tools18路径
+          until docker exec test-sqlserver /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P StrongPass@123456 -C -Q "SELECT 1" > /dev/null 2>&1; do
             if [ $ATTEMPT -ge $MAX_ATTEMPTS ]; then
               echo "SQL Server启动超时"
               # 输出容器日志用于调试
@@ -47,11 +48,13 @@ jobs:
               exit 1
             fi
             echo "等待SQL Server启动...（第$ATTEMPT次尝试）"
-            sleep 10
+            sleep 5
             ATTEMPT=$((ATTEMPT+1))
           done
-          # 创建测试数据库（bill_test_db）
-          docker exec test-sqlserver /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P StrongPass@123456 -Q "CREATE DATABASE bill_test_db;"
+          echo "SQL Server已就绪，创建测试数据库..."
+          # 创建测试数据库（bill_test_db）- 使用mssql-tools18路径和-C参数信任证书
+          docker exec test-sqlserver /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P StrongPass@123456 -C -Q "CREATE DATABASE bill_test_db;"
+          echo "测试数据库创建成功"
 
       # 步骤2：配置C#运行环境（.NET SDK）
       - name: 安装.NET SDK
