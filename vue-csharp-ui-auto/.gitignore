@@ -1,0 +1,16 @@
+# Backend
+Backend/bin/
+Backend/obj/
+
+# Frontend
+Frontend/node_modules/
+
+# IDE
+.vs/
+.vscode/
+*.suo
+*.user
+
+# OS
+.DS_Store
+Thumbs.db

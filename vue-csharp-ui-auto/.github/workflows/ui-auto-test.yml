@@ -1,0 +1,119 @@
+name: UI Automation Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  ui-test:
+    runs-on: ubuntu-24.04
+    
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          SA_PASSWORD: StrongPass@123456
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P StrongPass@123456 -Q 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Chrome
+        run: |
+          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+
+      - name: Install ChromeDriver
+        run: |
+          CHROME_VERSION=$(google-chrome --version | awk '{print $3}' | cut -d'.' -f1)
+          wget -q "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_${CHROME_VERSION}" -O chrome_version
+          CHROMEDRIVER_VERSION=$(cat chrome_version)
+          wget -q "https://chromedriver.storage.googleapis.com/${CHROMEDRIVER_VERSION}/chromedriver_linux64.zip"
+          unzip chromedriver_linux64.zip
+          sudo mv chromedriver /usr/local/bin/
+          sudo chmod +x /usr/local/bin/chromedriver
+
+      - name: Install SQL Server ODBC Driver
+        run: |
+          curl https://packages.microsoft.com/keys/microsoft.asc | sudo tee /etc/apt/trusted.gpg.d/microsoft.asc
+          curl https://packages.microsoft.com/config/ubuntu/24.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17
+
+      - name: Build Backend
+        working-directory: ./Backend
+        run: dotnet build --configuration Release
+
+      - name: Start Backend with Test Environment
+        working-directory: ./Backend
+        env:
+          ASPNETCORE_ENVIRONMENT: Test
+        run: |
+          dotnet run --configuration Release &
+          echo $! > backend.pid
+          sleep 10
+
+      - name: Install Frontend Dependencies
+        working-directory: ./Frontend
+        run: npm install
+
+      - name: Start Frontend
+        working-directory: ./Frontend
+        run: |
+          npm run serve &
+          echo $! > frontend.pid
+          sleep 15
+
+      - name: Install Python Test Dependencies
+        working-directory: ./UiAutoTest
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run UI Automation Tests
+        working-directory: ./UiAutoTest
+        run: |
+          pytest test_vue_page.py --html=report.html --self-contained-html
+          pytest test_bill_api.py --html=api_report.html --self-contained-html
+
+      - name: Upload Test Reports
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-reports
+          path: |
+            UiAutoTest/report.html
+            UiAutoTest/api_report.html
+          retention-days: 7
+
+      - name: Stop Services
+        if: always()
+        run: |
+          [ -f Backend/backend.pid ] && kill $(cat Backend/backend.pid) || true
+          [ -f Frontend/frontend.pid ] && kill $(cat Frontend/frontend.pid) || true

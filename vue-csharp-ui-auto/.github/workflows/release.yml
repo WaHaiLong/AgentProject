@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-24.04
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build Backend
+        working-directory: ./Backend
+        run: |
+          dotnet restore
+          dotnet publish --configuration Release --output ./release
+
+      - name: Build Frontend
+        working-directory: ./Frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Create Release Package
+        run: |
+          mkdir -p release-package
+          cp -r Backend/release release-package/backend
+          cp -r Frontend/dist release-package/frontend
+          cp README.md release-package/
+          tar -czf vue-csharp-ui-auto-${{ steps.get_version.outputs.VERSION }}.tar.gz release-package
+
+      - name: Generate Changelog
+        id: changelog
+        run: |
+          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+          git log $(git describe --tags --abbrev=0 HEAD^)..HEAD --pretty=format:"- %s (%h)" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ steps.get_version.outputs.VERSION }}
+          body: |
+            ## 🚀 Release ${{ steps.get_version.outputs.VERSION }}
+            
+            ### 📝 Changes
+            ${{ steps.changelog.outputs.CHANGELOG }}
+            
+            ### 📦 Artifacts
+            - Backend: C# ASP.NET Core API
+            - Frontend: Vue.js SPA
+            
+            ### 🔧 Deployment
+            1. Extract the release package
+            2. Configure database connection in Backend/appsettings.json
+            3. Deploy Backend to IIS or Kestrel
+            4. Deploy Frontend to web server or CDN
+            
+          files: |
+            vue-csharp-ui-auto-${{ steps.get_version.outputs.VERSION }}.tar.gz
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Release Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-${{ steps.get_version.outputs.VERSION }}
+          path: release-package/
+          retention-days: 90

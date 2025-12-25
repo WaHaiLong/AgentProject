@@ -1,0 +1,5 @@
+selenium==4.15.2          # 核心UI自动化工具
+pytest==7.4.3             # 测试框架
+pytest-html==4.0.2        # 生成HTML报告
+requests==2.31.0          # 可选：提前校验C#后端接口可用性
+pyodbc==4.0.39            # 连接SQL Server核心依赖

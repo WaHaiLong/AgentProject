@@ -1,0 +1,171 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # 代码质量检查
+  code-quality:
+    name: Code Quality Check
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore Backend Dependencies
+        working-directory: ./Backend
+        run: dotnet restore
+
+      - name: Build Backend
+        working-directory: ./Backend
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Run Backend Tests
+        working-directory: ./Backend
+        run: dotnet test --configuration Release --no-build --verbosity normal
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install Frontend Dependencies
+        working-directory: ./Frontend
+        run: npm ci
+
+      - name: Lint Frontend Code
+        working-directory: ./Frontend
+        run: npm run lint || true
+
+      - name: Build Frontend
+        working-directory: ./Frontend
+        run: npm run build
+
+  # 后端构建和测试
+  backend-build:
+    name: Backend Build & Test
+    runs-on: ubuntu-24.04
+    needs: code-quality
+    
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          SA_PASSWORD: StrongPass@123456
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P StrongPass@123456 -Q 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore Dependencies
+        working-directory: ./Backend
+        run: dotnet restore
+
+      - name: Build
+        working-directory: ./Backend
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Run Unit Tests
+        working-directory: ./Backend
+        run: dotnet test --configuration Release --no-build --verbosity normal
+
+      - name: Publish Backend
+        working-directory: ./Backend
+        run: dotnet publish --configuration Release --output ./publish
+
+      - name: Upload Backend Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: backend-app
+          path: Backend/publish/
+          retention-days: 30
+
+  # 前端构建
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-24.04
+    needs: code-quality
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: Frontend/package-lock.json
+
+      - name: Install Dependencies
+        working-directory: ./Frontend
+        run: npm ci
+
+      - name: Build Frontend
+        working-directory: ./Frontend
+        run: npm run build
+
+      - name: Upload Frontend Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: frontend-dist
+          path: Frontend/dist/
+          retention-days: 30
+
+  # 安全扫描
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-24.04
+    needs: code-quality
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # 构建成功通知
+  notify-success:
+    name: Notify Build Success
+    runs-on: ubuntu-24.04
+    needs: [backend-build, frontend-build, security-scan]
+    if: success()
+
+    steps:
+      - name: Send Success Notification
+        run: |
+          echo "✅ Build and tests completed successfully!"
+          echo "Backend and Frontend artifacts are ready for deployment."
