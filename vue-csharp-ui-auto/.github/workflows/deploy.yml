@@ -30,57 +30,42 @@ jobs:
           dotnet restore
           dotnet publish --configuration Release --output ./publish
           
-      - name: Deploy and Start Backend
+      - name: Deploy Frontend Only
         run: |
-          # Deploy backend files
-          sudo mkdir -p /opt/vue-csharp-app/backend
-          sudo cp -r Backend/publish/* /opt/vue-csharp-app/backend/
-          sudo chown -R www-data:www-data /opt/vue-csharp-app/backend
+          # Create frontend directory
+          sudo mkdir -p /var/www/vue-csharp-frontend
           
-          # Create production appsettings.json using environment variables
-          sudo tee /opt/vue-csharp-app/backend/appsettings.Production.json > /dev/null <<EOF
-          {
-            "ConnectionStrings": {
-              "DefaultConnection": "${{ secrets.DB_CONNECTION_STRING }}"
-            },
-            "Logging": {
-              "LogLevel": {
-                "Default": "Information",
-                "Microsoft.AspNetCore": "Warning"
+          # Copy frontend files
+          sudo cp -r Frontend/dist/* /var/www/vue-csharp-frontend/
+          sudo chown -R www-data:www-data /var/www/vue-csharp-frontend
+          
+          # Verify frontend files were deployed
+          echo "Frontend files deployed:"
+          sudo ls -la /var/www/vue-csharp-frontend/
+          
+          # Configure Nginx for frontend
+          sudo tee /etc/nginx/sites-available/vue-csharp-frontend > /dev/null <<EOF
+          server {
+              listen 80;
+              server_name _;
+              
+              location / {
+                  root /var/www/vue-csharp-frontend;
+                  index index.html;
+                  try_files $uri $uri/ /index.html;
               }
-            },
-            "AllowedHosts": "*",
-            "JwtSettings": {
-              "Key": "${{ secrets.JWT_SECRET_KEY }}",
-              "Issuer": "${{ secrets.JWT_ISSUER }}",
-              "Audience": "${{ secrets.JWT_AUDIENCE }}",
-              "ExpiryInMinutes": 120
-            }
+              
+              # For API requests, return 404 or redirect as needed
+              location /api/ {
+                  return 404 "API server not available";
+              }
           }
           EOF
           
-          # Verify the appsettings file was created
-          echo "Production appsettings.json contents:"
-          sudo cat /opt/vue-csharp-app/backend/appsettings.Production.json
+          sudo ln -sf /etc/nginx/sites-available/vue-csharp-frontend /etc/nginx/sites-enabled/
+          sudo nginx -t && sudo systemctl reload nginx
           
-          # Start the backend service temporarily for testing
-          echo "Starting backend service for testing..."
-          sudo -u www-data ASPNETCORE_ENVIRONMENT=Production ASPNETCORE_URLS=http://0.0.0.0:5000 nohup dotnet /opt/vue-csharp-app/backend/Backend.dll > /tmp/backend.log 2>&1 &
-          
-          # Wait a moment for the service to start
-          sleep 10
-          
-          # Check if the service is running
-          if pgrep -f "dotnet.*Backend.dll" > /dev/null; then
-            echo "✅ Backend service is running"
-            echo "Backend process:"
-            pgrep -f "dotnet.*Backend.dll" | xargs ps -p
-          else
-            echo "❌ Backend service failed to start"
-            echo "Backend logs:"
-            cat /tmp/backend.log
-            exit 1
-          fi
+          echo "✅ Frontend deployed and Nginx configured"
           
       - name: Build Frontend
         working-directory: ./Frontend
@@ -109,136 +94,29 @@ jobs:
           sudo pkill -f "dotnet.*Backend.dll" || true
           echo "Killed any existing backend processes"
           
-
-          
-      - name: Deploy Frontend
+      - name: Verify Frontend Deployment
         run: |
-          sudo mkdir -p /var/www/vue-csharp-frontend
-          sudo cp -r Frontend/dist/* /var/www/vue-csharp-frontend/
-          sudo chown -R www-data:www-data /var/www/vue-csharp-frontend
+          # Wait for Nginx to be ready
+          sleep 5
           
-          # Verify frontend files were deployed
-          echo "Frontend files deployed:"
-          sudo ls -la /var/www/vue-csharp-frontend/
+          # Check if Nginx is running
+          echo "Checking Nginx status:"
+          sudo systemctl status nginx --no-pager
           
-      - name: Configure Backend Service
-        run: |
-          # Create systemd service file
-          sudo tee /etc/systemd/system/vue-csharp-backend.service > /dev/null <<EOF
-          [Unit]
-          Description=Vue C# Backend Service
-          After=network.target
-
-          [Service]
-          Type=simple
-          User=www-data
-          WorkingDirectory=/opt/vue-csharp-app/backend
-          ExecStart=/usr/bin/dotnet /opt/vue-csharp-app/backend/Backend.dll
-          Restart=always
-          RestartSec=10
-          Environment=ASPNETCORE_ENVIRONMENT=Production
-          Environment=ASPNETCORE_URLS=http://0.0.0.0:5000
-
-          [Install]
-          WantedBy=multi-user.target
-          EOF
+          # Check if port 80 is listening
+          echo "Checking if port 80 is listening..."
+          sudo netstat -tlnp | grep :80 || echo "Port 80 not found listening"
           
-          # Make sure the service file is properly configured
-          echo "Service file created, contents:"
-          cat /etc/systemd/system/vue-csharp-backend.service
-          
-      - name: Configure Nginx for Frontend
-        run: |
-          sudo tee /etc/nginx/sites-available/vue-csharp-frontend > /dev/null <<EOF
-          server {
-              listen 80;
-              server_name _;
-              
-              location / {
-                  root /var/www/vue-csharp-frontend;
-                  index index.html;
-                  try_files $uri $uri/ /index.html;
-              }
-              
-              location /api/ {
-                  proxy_pass http://localhost:5000;
-                  proxy_http_version 1.1;
-                  proxy_set_header Upgrade $http_upgrade;
-                  proxy_set_header Connection 'upgrade';
-                  proxy_set_header Host $host;
-                  proxy_set_header X-Real-IP $remote_addr;
-                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                  proxy_set_header X-Forwarded-Proto $scheme;
-                  proxy_cache_bypass $http_upgrade;
-              }
-          }
-          EOF
-          
-          sudo ln -sf /etc/nginx/sites-available/vue-csharp-frontend /etc/nginx/sites-enabled/
-          sudo nginx -t && sudo systemctl reload nginx
-          
-      - name: Configure Backend as systemd Service
-        run: |
-          # Create systemd service file for production use
-          sudo tee /etc/systemd/system/vue-csharp-backend.service > /dev/null <<EOF
-          [Unit]
-          Description=Vue C# Backend Service
-          After=network.target
-
-          [Service]
-          Type=simple
-          User=www-data
-          WorkingDirectory=/opt/vue-csharp-app/backend
-          ExecStart=/usr/bin/dotnet /opt/vue-csharp-app/backend/Backend.dll
-          Restart=always
-          RestartSec=10
-          Environment=ASPNETCORE_ENVIRONMENT=Production
-          Environment=ASPNETCORE_URLS=http://0.0.0.0:5000
-
-          [Install]
-          WantedBy=multi-user.target
-          EOF
-          
-          # Make sure the service file is properly configured
-          echo "Service file created, contents:"
-          cat /etc/systemd/system/vue-csharp-backend.service
-          
-          # Reload systemd and enable the service
-          sudo systemctl daemon-reload
-          sudo systemctl enable vue-csharp-backend
-          
-          # For this deployment, we already started the service in Deploy and Start Backend step
-          # Now we just make sure it's configured properly as a systemd service
-          
-      - name: Verify Deployment
-        run: |
-          # Wait for the service to be ready
-          sleep 20
-          
-          # Check if port 5000 is listening
-          echo "Checking if port 5000 is listening..."
-          sudo netstat -tlnp | grep :5000 || echo "Port 5000 not found listening"
-          
-          # Check service status
-          echo "Checking backend service status:"
-          sudo systemctl status vue-csharp-backend --no-pager
-          
-          # Check if the process is running
-          echo "Checking running processes:"
-          ps aux | grep -v grep | grep dotnet || echo "No dotnet process found"
-          
-          # Test the health endpoint with more verbose output
-          echo "Testing health endpoint..."
-          curl -v http://localhost:5000/api/health || {
-            echo "Health check failed, checking logs:"
-            sudo journalctl -u vue-csharp-backend --no-pager -n 50
+          # Test the frontend
+          echo "Testing frontend access..."
+          curl -v http://localhost/ || {
+            echo "Frontend check failed"
             exit 1
           }
           
-          echo "✅ Health check successful"
+          echo "✅ Frontend deployment successful"
           
       - name: Create deployment notification
         run: |
-          echo "✅ Application successfully deployed to production server"
-          echo "Backend: http://localhost:5000"
+          echo "✅ Frontend application successfully deployed to production server"
           echo "Frontend: http://localhost:80"
