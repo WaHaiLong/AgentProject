@@ -1,0 +1,146 @@
+name: Deploy to Server
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: self-hosted  # 使用自托管运行器
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          
+      - name: Build Backend
+        working-directory: ./Backend
+        run: |
+          dotnet restore
+          dotnet publish --configuration Release --output ./publish
+          
+      - name: Build Frontend
+        working-directory: ./Frontend
+        run: |
+          npm ci
+          npm run build
+          
+      - name: Stop existing services
+        run: |
+          sudo systemctl stop vue-csharp-backend || true
+          sudo systemctl stop vue-csharp-frontend || true
+          
+      - name: Deploy Backend
+        run: |
+          sudo mkdir -p /opt/vue-csharp-app/backend
+          sudo cp -r Backend/publish/* /opt/vue-csharp-app/backend/
+          sudo chown -R www-data:www-data /opt/vue-csharp-app/backend
+          
+      - name: Configure Production Settings
+        run: |
+          # Create production appsettings.json using environment variables
+          sudo tee /opt/vue-csharp-app/backend/appsettings.Production.json > /dev/null <<EOF
+          {
+            "ConnectionStrings": {
+              "DefaultConnection": "${{ secrets.DB_CONNECTION_STRING }}"
+            },
+            "Logging": {
+              "LogLevel": {
+                "Default": "Information",
+                "Microsoft.AspNetCore": "Warning"
+              }
+            },
+            "AllowedHosts": "*",
+            "JwtSettings": {
+              "Key": "${{ secrets.JWT_SECRET_KEY }}",
+              "Issuer": "${{ secrets.JWT_ISSUER }}",
+              "Audience": "${{ secrets.JWT_AUDIENCE }}",
+              "ExpiryInMinutes": 120
+            }
+          }
+          EOF
+          
+      - name: Deploy Frontend
+        run: |
+          sudo mkdir -p /var/www/vue-csharp-frontend
+          sudo cp -r Frontend/dist/* /var/www/vue-csharp-frontend/
+          sudo chown -R www-data:www-data /var/www/vue-csharp-frontend
+          
+      - name: Configure Backend Service
+        run: |
+          sudo tee /etc/systemd/system/vue-csharp-backend.service > /dev/null <<EOF
+          [Unit]
+          Description=Vue C# Backend Service
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=www-data
+          WorkingDirectory=/opt/vue-csharp-app/backend
+          ExecStart=/usr/bin/dotnet /opt/vue-csharp-app/backend/Backend.dll
+          Restart=always
+          RestartSec=10
+          Environment=ASPNETCORE_ENVIRONMENT=Production
+          Environment=ASPNETCORE_URLS=http://localhost:5000
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          
+      - name: Configure Nginx for Frontend
+        run: |
+          sudo tee /etc/nginx/sites-available/vue-csharp-frontend > /dev/null <<EOF
+          server {
+              listen 80;
+              server_name _;
+              
+              location / {
+                  root /var/www/vue-csharp-frontend;
+                  index index.html;
+                  try_files $uri $uri/ /index.html;
+              }
+              
+              location /api/ {
+                  proxy_pass http://localhost:5000;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection 'upgrade';
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_cache_bypass $http_upgrade;
+              }
+          }
+          EOF
+          
+          sudo ln -sf /etc/nginx/sites-available/vue-csharp-frontend /etc/nginx/sites-enabled/
+          sudo nginx -t && sudo systemctl reload nginx
+          
+      - name: Start Backend Service
+        run: |
+          sudo systemctl daemon-reload
+          sudo systemctl enable vue-csharp-backend
+          sudo systemctl start vue-csharp-backend
+          
+      - name: Verify Deployment
+        run: |
+          sleep 10
+          curl -f http://localhost:5000/api/health || exit 1
+          
+      - name: Create deployment notification
+        run: |
+          echo "✅ Application successfully deployed to production server"
+          echo "Backend: http://localhost:5000"
+          echo "Frontend: http://localhost:80"
