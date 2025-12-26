@@ -38,8 +38,20 @@ jobs:
           
       - name: Stop existing services
         run: |
-          sudo systemctl stop vue-csharp-backend || true
-          sudo systemctl stop vue-csharp-frontend || true
+          # Check if services exist before stopping
+          if sudo systemctl list-units --type=service | grep -q vue-csharp-backend; then
+            sudo systemctl stop vue-csharp-backend
+            echo "Stopped existing vue-csharp-backend service"
+          else
+            echo "vue-csharp-backend service does not exist yet"
+          fi
+          
+          if sudo systemctl list-units --type=service | grep -q vue-csharp-frontend; then
+            sudo systemctl stop vue-csharp-frontend
+            echo "Stopped existing vue-csharp-frontend service"
+          else
+            echo "vue-csharp-frontend service does not exist yet"
+          fi
           
       - name: Deploy Backend
         run: |
@@ -71,11 +83,19 @@ jobs:
           }
           EOF
           
+          # Verify the appsettings file was created
+          echo "Production appsettings.json contents:"
+          sudo cat /opt/vue-csharp-app/backend/appsettings.Production.json
+          
       - name: Deploy Frontend
         run: |
           sudo mkdir -p /var/www/vue-csharp-frontend
           sudo cp -r Frontend/dist/* /var/www/vue-csharp-frontend/
           sudo chown -R www-data:www-data /var/www/vue-csharp-frontend
+          
+          # Verify frontend files were deployed
+          echo "Frontend files deployed:"
+          sudo ls -la /var/www/vue-csharp-frontend/
           
       - name: Configure Backend Service
         run: |
