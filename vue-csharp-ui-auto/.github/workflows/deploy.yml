@@ -79,6 +79,7 @@ jobs:
           
       - name: Configure Backend Service
         run: |
+          # Create systemd service file
           sudo tee /etc/systemd/system/vue-csharp-backend.service > /dev/null <<EOF
           [Unit]
           Description=Vue C# Backend Service
@@ -92,11 +93,15 @@ jobs:
           Restart=always
           RestartSec=10
           Environment=ASPNETCORE_ENVIRONMENT=Production
-          Environment=ASPNETCORE_URLS=http://localhost:5000
+          Environment=ASPNETCORE_URLS=http://0.0.0.0:5000
 
           [Install]
           WantedBy=multi-user.target
           EOF
+          
+          # Make sure the service file is properly configured
+          echo "Service file created, contents:"
+          cat /etc/systemd/system/vue-csharp-backend.service
           
       - name: Configure Nginx for Frontend
         run: |
@@ -134,10 +139,45 @@ jobs:
           sudo systemctl enable vue-csharp-backend
           sudo systemctl start vue-csharp-backend
           
+          # Wait a bit for the service to start
+          sleep 15
+          
+          # Check if the service is running
+          if sudo systemctl is-active --quiet vue-csharp-backend; then
+            echo "✅ Backend service is running"
+          else
+            echo "❌ Backend service failed to start"
+            sudo systemctl status vue-csharp-backend
+            sudo journalctl -u vue-csharp-backend -n 50 --no-pager
+            exit 1
+          fi
+          
       - name: Verify Deployment
         run: |
-          sleep 10
-          curl -f http://localhost:5000/api/health || exit 1
+          # Wait for the service to be ready
+          sleep 20
+          
+          # Check if port 5000 is listening
+          echo "Checking if port 5000 is listening..."
+          sudo netstat -tlnp | grep :5000 || echo "Port 5000 not found listening"
+          
+          # Check service status
+          echo "Checking backend service status:"
+          sudo systemctl status vue-csharp-backend --no-pager
+          
+          # Check if the process is running
+          echo "Checking running processes:"
+          ps aux | grep -v grep | grep dotnet || echo "No dotnet process found"
+          
+          # Test the health endpoint with more verbose output
+          echo "Testing health endpoint..."
+          curl -v http://localhost:5000/api/health || {
+            echo "Health check failed, checking logs:"
+            sudo journalctl -u vue-csharp-backend --no-pager -n 50
+            exit 1
+          }
+          
+          echo "✅ Health check successful"
           
       - name: Create deployment notification
         run: |
